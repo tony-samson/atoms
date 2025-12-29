@@ -144,19 +144,188 @@ function emitPhoton(){
   atom.excitation=Math.max(0,atom.excitation-1);
 }
 
+let particles = []; // electrons, protons, alpha
+let blasts = [];    // circular flash effects
+
 function bombard(type){
-  if (type === "neutron") {
+  const cx = canvas.width/2;
+  const cy = canvas.height/2;
+
+  if(type === "neutron"){
     atom.N++;
-    // If it's Uranium and hits a neutron, 80% chance to split
-    if (atom.element === "U" && Math.random() > 0.2) {
+    if(atom.element === "U" && Math.random() > 0.2){
       triggerFission();
-    }}
-  if(type==="alpha"){ atom.Z-=2; atom.N-=2; }
-  if(type==="beta"){ atom.Z++; atom.N--; }
-  if(type==="gamma"){ emitPhoton(); }
+    }
+  }
+
+  if(type === "alpha"){
+    // Create incoming alpha particle from left
+    particles.push({
+      x: 0,
+      y: cy,
+      dx: 6,       // horizontal speed
+      dy: 0,
+      color: "orange",
+      type: "alpha",
+      targetHit: false
+    });
+  }
+
+  if(type==="beta"){ 
+    atom.Z++;
+    atom.N--;
+  }
+
+  if(type==="gamma"){ 
+    emitPhoton();
+  }
 
   atom.unstable = atom.N/atom.Z > 1.6;
 }
+
+// --- Particle animation and collision logic ---
+function animateParticles(){
+  particles.forEach((p, idx)=>{
+    p.x += p.dx;
+    p.y += p.dy;
+
+    // Alpha particle collision with nucleus
+    if(p.type === "alpha" && !p.targetHit && p.x >= canvas.width/2){
+      p.targetHit = true;
+
+      if(atom.element === "H"){
+        if(Math.random() < 0.9){
+          // Ionization
+          atom.electrons = 0;
+          spectrumLines.push(13.6);
+
+          // Yellow circular flash
+          blasts.push({
+            x: canvas.width/2,
+            y: canvas.height/2,
+            radius: 60,
+            color: "rgba(255,255,0,1)",
+            life: 20,
+            maxLife: 20
+          });
+
+          // Electron escape
+          particles.push({
+            x: canvas.width/2,
+            y: canvas.height/2,
+            dx: Math.random()*4-2,
+            dy: -3 - Math.random()*2,
+            color: "blue",
+            type: "electron",
+            life: 100
+          });
+
+        } else {
+          // Rare nuclear fusion
+          blasts.push({
+            x: canvas.width/2,
+            y: canvas.height/2,
+            radius: 120,                  // large blast
+            color: "rgba(255,50,0,1)",    // bright red
+            life: 30,
+            maxLife: 30
+          });
+
+          // H -> He
+          atom.element = "He";
+          atom.Z = 2;
+          atom.N = 2;
+          atom.electrons = 2;
+
+          // Outgoing proton
+          particles.push({
+            x: canvas.width/2,
+            y: canvas.height/2,
+            dx: 3 + Math.random()*2,
+            dy: -2 - Math.random()*2,
+            color: "red",
+            type: "proton",
+            life: 150
+          });
+        }
+      } else {
+        // Heavy atoms: simple alpha effect
+        atom.Z = Math.max(1, atom.Z-2);
+        atom.N = Math.max(0, atom.N-2);
+      }
+    }
+
+    // Draw particle
+    ctx.fillStyle = p.color;
+let radius = (p.type==="electron") ? 3 : (p.type==="proton") ? 5 : (p.type==="alpha") ? 5 : 6;
+ctx.fillStyle = (p.type==="alpha") ? "rgba(255,165,0,0.8)" : p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, radius, 0, Math.PI*2);
+    ctx.fill();
+
+    // Fade electrons/protons over lifetime
+    if(p.life !== undefined){
+      p.life--;
+      if(p.life <= 0) particles.splice(idx,1);
+    }
+
+    // Remove alpha if it goes off screen
+    if(p.type==="alpha" && p.x > canvas.width){
+      particles.splice(idx,1);
+    }
+  });
+}
+
+// --- Draw circular blasts with expanding effect ---
+function drawBlasts(){
+  blasts.forEach((b, i) => {
+    let alpha = b.life / b.maxLife; // fade out
+    let currentRadius = b.radius + (1 - b.life / b.maxLife) * 60; // expand
+
+    // Draw main circle
+    ctx.fillStyle = b.color.replace(/[\d\.]+\)$/g, `${alpha})`);
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, currentRadius, 0, Math.PI*2);
+    ctx.fill();
+
+    // Optional: add a smaller inner glow for dramatic effect
+    ctx.fillStyle = b.color.replace(/[\d\.]+\)$/g, `${alpha*0.6})`);
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, currentRadius*0.5, 0, Math.PI*2);
+    ctx.fill();
+
+    b.life--;
+    if(b.life <= 0) blasts.splice(i,1);
+  });
+}
+
+// --- Update loop ---
+function update(){
+  ctx.fillStyle = "rgba(0,0,10,0.05)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  decay();
+  if (Math.random() < atom.temp / 20000) {
+    atom.excitation = Math.min(atom.excitation + 1, 4);
+  }
+drawOrbitals();
+drawNucleus();
+animateParticles(); // move & draw alpha, electrons, protons
+drawBlasts();       // draw flashes on top of everything
+drawSpectrum();
+
+
+  document.getElementById("info").innerHTML=
+    `Element: ${atom.element}<br>
+     Protons: ${atom.Z}<br>
+     Neutrons: ${atom.N}<br>
+     Electrons: ${atom.electrons}<br>
+     Orbital: ${atom.orbital}<br>
+     Unstable: ${atom.unstable}`;
+
+  requestAnimationFrame(update);
+}
+
 
 
 function triggerFission() {
@@ -238,28 +407,30 @@ function drawSpectrum(){
 }
 
 function update(){
- ctx.fillStyle = "rgba(0,0,10,0.05)";
-ctx.fillRect(0, 0, canvas.width, canvas.height);
-
+  ctx.fillStyle = "rgba(0,0,10,0.05)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   decay();
   if (Math.random() < atom.temp / 20000) {
-  atom.excitation = Math.min(atom.excitation + 1, 4);
-}
+    atom.excitation = Math.min(atom.excitation + 1, 4);
+  }
 
   drawOrbitals();
   drawNucleus();
   drawSpectrum();
+  animateParticles(); // <--- NEW
 
   document.getElementById("info").innerHTML=
     `Element: ${atom.element}<br>
      Protons: ${atom.Z}<br>
      Neutrons: ${atom.N}<br>
+     Electrons: ${atom.electrons}<br>
      Orbital: ${atom.orbital}<br>
      Unstable: ${atom.unstable}`;
 
   requestAnimationFrame(update);
 }
+
 
 update();
 </script>
