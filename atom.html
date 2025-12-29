@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Quantum & Nuclear Physics Lab</title>
+
+<style>
+body {
+  margin: 0;
+  background: #05050a;
+  color: #00eaff;
+  font-family: monospace;
+  display: flex;
+  height: 100vh;
+}
+
+#ui {
+  width: 360px;
+  padding: 15px;
+  background: #080815;
+  border-right: 2px solid #003344;
+  overflow-y: auto;
+}
+
+canvas {
+  flex: 1;
+  background: radial-gradient(circle, #02020a 40%, #000);
+}
+
+button, select, input {
+  width: 100%;
+  margin: 4px 0;
+  background: #003344;
+  color: white;
+  border: none;
+  padding: 6px;
+}
+
+button:hover { background: #00eaff; color: black; }
+
+.stat {
+  background: #001020;
+  padding: 6px;
+  margin-bottom: 6px;
+  border: 1px solid #00eaff;
+}
+
+#spectrum {
+  background: black;
+  height: 120px;
+  border: 1px solid #00eaff;
+  margin-top: 5px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+<h3>Quantum & Nuclear Lab</h3>
+
+<select onchange="switchElement(this.value)">
+<option value="H">Hydrogen</option>
+<option value="He">Helium</option>
+<option value="C">Carbon</option>
+<option value="Fe">Iron</option>
+<option value="U">Uranium-238</option>
+</select>
+
+<div class="stat" id="info"></div>
+
+<label>Temperature (K)</label>
+<input type="range" min="0" max="10000" value="300" oninput="atom.temp=this.value">
+
+<label>Orbital</label>
+<select onchange="atom.orbital=this.value">
+<option>s</option>
+<option>p</option>
+<option>d</option>
+</select>
+
+<button onclick="excite()">Photon Excite</button>
+
+<h4>Particle Bombardment</h4>
+<button onclick="bombard('neutron')">Neutron</button>
+<button onclick="bombard('alpha')">Alpha</button>
+<button onclick="bombard('beta')">Beta</button>
+<button onclick="bombard('gamma')">Gamma</button>
+
+<h4>Spectrum</h4>
+<canvas id="spectrum" width="330" height="120"></canvas>
+</div>
+
+<canvas id="view"></canvas>
+
+<script>
+const canvas = document.getElementById("view");
+const ctx = canvas.getContext("2d");
+ctx.globalCompositeOperation = "lighter";
+
+canvas.width = window.innerWidth - 360;
+canvas.height = window.innerHeight;
+
+const spec = document.getElementById("spectrum");
+const sctx = spec.getContext("2d");
+
+const ELEMENTS = {
+  H: {Z:1,N:0},
+  He:{Z:2,N:2},
+  C:{Z:6,N:6},
+  Fe:{Z:26,N:30},
+  U:{Z:92,N:146}
+};
+
+let atom = {
+  element:"H",
+  Z:1,N:0,
+  electrons:1,
+  orbital:"s",
+  excitation:0,
+  temp:300,
+  unstable:false
+};
+
+let spectrumLines = [];
+
+function switchElement(e){
+  atom.element=e;
+  atom.Z=ELEMENTS[e].Z;
+  atom.N=ELEMENTS[e].N;
+  atom.electrons=atom.Z;
+  atom.excitation=0;
+  spectrumLines=[];
+}
+
+function excite(){
+  atom.excitation++;
+  emitPhoton();
+}
+
+function emitPhoton(){
+  let E = 13.6 * atom.Z*atom.Z / ((atom.excitation+1)**2);
+  spectrumLines.push(E);
+  atom.excitation=Math.max(0,atom.excitation-1);
+}
+
+function bombard(type){
+  if (type === "neutron") {
+    atom.N++;
+    // If it's Uranium and hits a neutron, 80% chance to split
+    if (atom.element === "U" && Math.random() > 0.2) {
+      triggerFission();
+    }}
+  if(type==="alpha"){ atom.Z-=2; atom.N-=2; }
+  if(type==="beta"){ atom.Z++; atom.N--; }
+  if(type==="gamma"){ emitPhoton(); }
+
+  atom.unstable = atom.N/atom.Z > 1.6;
+}
+
+
+function triggerFission() {
+  // 1. Break the atom into two smaller elements (e.g., Barium and Krypton)
+  atom.Z = Math.floor(atom.Z / 2);
+  atom.N = Math.floor(atom.N / 2);
+  atom.element = "Fission Fragments";
+  
+  // 2. Visual "Flash"
+  ctx.fillStyle = "white";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // 3. Emit 2-3 new neutrons (In a multi-atom sim, these would hit others)
+  console.log("BOOM: 3 Neutrons Released"); 
+}
+function decay(){
+  if(!atom.unstable) return;
+  if(Math.random()<0.002){ bombard("alpha"); }
+  if(Math.random()<0.004){ bombard("beta"); }
+}
+
+function drawOrbitals() {
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+
+  const baseRadius = 120 + atom.excitation * 40;
+  const samples = 6000 + atom.excitation * 3000;
+
+  for (let i = 0; i < samples; i++) {
+    let r = Math.random() * baseRadius;
+    let θ = Math.random() * Math.PI * 2;
+
+    // Angular dependence (real orbital shapes)
+    let angular = 1;
+    if (atom.orbital === "p") angular = Math.abs(Math.cos(θ));
+    if (atom.orbital === "d") angular = Math.abs(Math.cos(2 * θ));
+
+    // Radial probability (decays outward)
+    let radial = Math.exp(-r / baseRadius);
+
+    const intensity = 0.04 * angular * radial;
+
+    ctx.fillStyle = `rgba(0,200,255,${intensity})`;
+    ctx.fillRect(
+      cx + Math.cos(θ) * r,
+      cy + Math.sin(θ) * r,
+      1.5, 1.5
+    );
+  }
+}
+
+function drawNucleus(){
+  const cx=canvas.width/2, cy=canvas.height/2;
+  for(let i=0;i<atom.Z;i++){
+    ctx.fillStyle="yellow";
+    ctx.beginPath();
+    ctx.arc(cx+Math.random()*10-5,cy+Math.random()*10-5,3,0,6.28);
+    ctx.fill();
+  }
+  for(let i=0;i<atom.N;i++){
+    ctx.fillStyle="blue";
+    ctx.beginPath();
+    ctx.arc(cx+Math.random()*10-5,cy+Math.random()*10-5,3,0,6.28);
+    ctx.fill();
+  }
+}
+
+function drawSpectrum(){
+  sctx.fillStyle="black";
+  sctx.fillRect(0,0,330,120);
+  spectrumLines.forEach(E=>{
+    let x=(E/100)*330;
+    sctx.strokeStyle="violet";
+    sctx.beginPath();
+    sctx.moveTo(x,0);
+    sctx.lineTo(x,120);
+    sctx.stroke();
+  });
+}
+
+function update(){
+ ctx.fillStyle = "rgba(0,0,10,0.05)";
+ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+
+  decay();
+  if (Math.random() < atom.temp / 20000) {
+  atom.excitation = Math.min(atom.excitation + 1, 4);
+}
+
+  drawOrbitals();
+  drawNucleus();
+  drawSpectrum();
+
+  document.getElementById("info").innerHTML=
+    `Element: ${atom.element}<br>
+     Protons: ${atom.Z}<br>
+     Neutrons: ${atom.N}<br>
+     Orbital: ${atom.orbital}<br>
+     Unstable: ${atom.unstable}`;
+
+  requestAnimationFrame(update);
+}
+
+update();
+</script>
+
+</body>
+</html>
